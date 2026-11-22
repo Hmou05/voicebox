@@ -1,12 +1,8 @@
 import { motion } from 'framer-motion';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils/cn';
 
-/**
- * Pill state machine shared between the settings preview and the live
- * recording pill in the Captures tab.
- */
 export type PillState =
   | 'recording'
   | 'transcribing'
@@ -24,9 +20,7 @@ const PILL_LABEL_KEYS: Record<Exclude<PillState, 'rest' | 'error'>, string> = {
   completed: 'captures.pill.completed',
 };
 
-function barModeFor(
-  state: Exclude<PillState, 'error'>,
-): 'generating' | 'playing' | 'idle' {
+function barModeFor(state: Exclude<PillState, 'error'>): 'generating' | 'playing' | 'idle' {
   if (state === 'recording' || state === 'speaking') return 'playing';
   if (state === 'completed' || state === 'rest') return 'idle';
   return 'generating';
@@ -39,20 +33,16 @@ export function PillAudioBars({ mode }: { mode: 'generating' | 'playing' | 'idle
         <motion.div
           key={`${mode}-${i}`}
           className={cn('w-[3px] rounded-full', mode === 'idle' ? 'bg-accent/30' : 'bg-accent')}
-          animate={
-            mode === 'generating'
-              ? { height: ['6px', '16px', '6px'] }
-              : mode === 'playing'
-                ? { height: ['8px', '14px', '4px', '12px', '8px'] }
-                : { height: '8px' }
-          }
-          transition={
-            mode === 'generating'
-              ? { duration: 0.6, repeat: Infinity, delay: i * 0.08, ease: 'easeInOut' }
-              : mode === 'playing'
-                ? { duration: 1.2, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }
-                : { duration: 0.4, ease: 'easeOut' }
-          }
+          animate={mode === 'generating'
+            ? { height: ['6px', '16px', '6px'] }
+            : mode === 'playing'
+              ? { height: ['8px', '14px', '4px', '12px', '8px'] }
+              : { height: '8px' }}
+          transition={mode === 'generating'
+            ? { duration: 0.6, repeat: Infinity, delay: i * 0.08, ease: 'easeInOut' }
+            : mode === 'playing'
+              ? { duration: 1.2, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }
+              : { duration: 0.4, ease: 'easeOut' }}
         />
       ))}
     </div>
@@ -66,19 +56,14 @@ function formatElapsed(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/**
- * Floating pill shown during capture. `state` drives the label, dot animation,
- * and bar motion; `elapsedMs` freezes at whatever the caller last passed in
- * (recording advances the timer, transcribing/refining hold the final value).
- * The ``error`` state renders a destructive variant — a clickable pill that
- * copies its message to the clipboard on press and calls ``onDismiss``.
- */
 export function CapturePill({
   state,
   elapsedMs,
   onStop,
   errorMessage,
   onDismiss,
+  onRerequestMicrophone,
+  canRerequestMicrophone,
   className,
 }: {
   state: PillState;
@@ -86,6 +71,8 @@ export function CapturePill({
   onStop?: () => void;
   errorMessage?: string | null;
   onDismiss?: () => void;
+  onRerequestMicrophone?: () => void;
+  canRerequestMicrophone?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -95,6 +82,8 @@ export function CapturePill({
       <ErrorPill
         message={errorMessage ?? t('captures.pill.errorFallback')}
         onDismiss={onDismiss}
+        onRerequestMicrophone={onRerequestMicrophone}
+        canRerequestMicrophone={canRerequestMicrophone}
         className={className}
       />
     );
@@ -106,9 +95,7 @@ export function CapturePill({
 
   const dot = (
     <span className="relative flex h-2 w-2 shrink-0">
-      {state === 'recording' && (
-        <span className="absolute inset-0 rounded-full bg-accent animate-ping opacity-70" />
-      )}
+      {state === 'recording' && <span className="absolute inset-0 rounded-full bg-accent animate-ping opacity-70" />}
       <span className="relative rounded-full h-2 w-2 bg-accent" />
     </span>
   );
@@ -124,13 +111,9 @@ export function CapturePill({
     </button>
   ) : dot;
 
-  // Completed gets an inset accent stroke (via box-shadow, not Tailwind's
-  // ring — ring utility doesn't compose with arbitrary shadow-[…]) to mark
-  // the success moment without changing the pill's dimensions.
-  const completedStroke =
-    state === 'completed'
-      ? 'shadow-[inset_0_0_0_2px_hsl(var(--accent)/0.6)]'
-      : null;
+  const completedStroke = state === 'completed'
+    ? 'shadow-[inset_0_0_0_2px_hsl(var(--accent)/0.6)]'
+    : null;
 
   return (
     <div
@@ -145,13 +128,9 @@ export function CapturePill({
       )}
     >
       {stopButton}
-      <span className="text-sm font-medium shrink-0" style={{ minWidth: '104px' }}>
-        {labelText}
-      </span>
+      <span className="text-sm font-medium shrink-0" style={{ minWidth: '104px' }}>{labelText}</span>
       <PillAudioBars mode={barMode} />
-      <span className="text-xs tabular-nums text-accent/70 font-medium shrink-0 -ml-1">
-        {formatElapsed(elapsedMs)}
-      </span>
+      <span className="text-xs tabular-nums text-accent/70 font-medium shrink-0 -ml-1">{formatElapsed(elapsedMs)}</span>
     </div>
   );
 }
@@ -159,40 +138,62 @@ export function CapturePill({
 function ErrorPill({
   message,
   onDismiss,
+  onRerequestMicrophone,
+  canRerequestMicrophone,
   className,
 }: {
   message: string;
   onDismiss?: () => void;
+  onRerequestMicrophone?: () => void;
+  canRerequestMicrophone?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
-  const handleClick = async () => {
+
+  const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(message);
-    } catch {
-      // Clipboard access can be denied in rare webview configs — ignore,
-      // we still want the dismiss to land.
-    }
-    onDismiss?.();
+    } catch {}
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      title={t('captures.pill.errorCopyTooltip')}
+    <div
       className={cn(
-        'inline-flex items-center gap-2.5 px-4 h-10 rounded-full',
-        'bg-white/85 ring-1 ring-destructive/25 shadow-lg backdrop-blur-xl text-red-600 hover:bg-white',
-        'dark:bg-black/65 dark:ring-0 dark:shadow-none dark:backdrop-blur-md dark:text-red-300 dark:hover:bg-black/80',
-        'max-w-[380px] transition-colors',
-        'focus:outline-none focus:ring-2 focus:ring-red-400/50',
+        'inline-flex items-center gap-2 px-3 h-10 rounded-full',
+        'bg-white/85 ring-1 ring-destructive/25 shadow-lg backdrop-blur-xl text-red-600',
+        'dark:bg-black/65 dark:ring-0 dark:shadow-none dark:backdrop-blur-md dark:text-red-300',
+        'max-w-[520px] transition-colors',
         className,
       )}
     >
-      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-      <span className="text-sm font-medium truncate">{message}</span>
-    </button>
+      <button
+        type="button"
+        onClick={handleCopy}
+        title={t('captures.pill.errorCopyTooltip')}
+        aria-label={t('captures.pill.errorCopyTooltip')}
+        className="flex items-center gap-2 min-w-0 focus:outline-none focus:ring-2 focus:ring-red-400/50 rounded-full"
+      >
+        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+        <span className="text-sm font-medium truncate max-w-[240px]">{message}</span>
+      </button>
+      {canRerequestMicrophone ? (
+        <button
+          type="button"
+          onClick={onRerequestMicrophone}
+          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-red-600 px-2.5 text-xs font-semibold text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400/50"
+        >
+          <RefreshCw className="h-3 w-3" />
+          {t('captures.pill.rerequestMicrophone')}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label={t('common.close')}
+        className="text-xs text-red-600/70 hover:text-red-700 dark:text-red-300/70 dark:hover:text-red-200"
+      >
+        {t('common.close')}
+      </button>
+    </div>
   );
 }
-

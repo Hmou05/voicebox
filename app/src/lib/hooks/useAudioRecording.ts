@@ -51,7 +51,7 @@ export function useAudioRecording({
           });
 
           const errorMsg = platform.metadata.isTauri
-            ? 'Microphone access is not available. Please ensure:\n1. The app has microphone permissions in System Settings (macOS: System Settings > Privacy & Security > Microphone)\n2. You restart the app after granting permissions\n3. You are using Tauri v2 with a webview that supports getUserMedia'
+            ? 'Microphone access is not available. Please ensure:\n1. The app has microphone permissions in System Settings (macOS: System Settings > Privacy & Security > Microphone)\n2. You restart the app after granting permission.'
             : 'Microphone access is not available. Please ensure you are using a secure context (HTTPS or localhost) and that your browser has microphone permissions enabled.';
           setError(errorMsg);
           throw new Error(errorMsg);
@@ -155,14 +155,17 @@ export function useAudioRecording({
         }
       }, 100);
     } catch (err) {
+      const errorName = err instanceof DOMException ? err.name : '';
       const errorMessage =
-        err instanceof Error
-          ? err.message
-          : 'Failed to access microphone. Please check permissions.';
+        errorName === 'NotAllowedError' || /permission|denied/i.test(err instanceof Error ? err.message : '')
+          ? 'Microphone permission was denied. Re-request access or allow it in your system settings.'
+          : err instanceof Error
+            ? err.message
+            : 'Failed to access microphone. Please check permissions.';
       setError(errorMessage);
       setIsRecording(false);
     }
-  }, [maxDurationSeconds, onRecordingComplete]);
+  }, [maxDurationSeconds, onRecordingComplete, platform.metadata.isTauri]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
